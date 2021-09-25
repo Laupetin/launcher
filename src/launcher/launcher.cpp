@@ -11,11 +11,6 @@
 #include <utils/exit_callback.hpp>
 #include <utils/properties.hpp>
 
-const std::string& Launcher::GetUiPath()
-{
-	return ui_path;
-}
-
 std::string Launcher::GetAppdataPath()
 {
 	PWSTR path;
@@ -34,17 +29,24 @@ std::string Launcher::GetAppdataPath()
 
 void Launcher::SetWorkingDirectory()
 {
-	SetCurrentDirectoryA(base_path.data());
+	SetCurrentDirectoryA(base_path.string().data());
 }
 
 void Launcher::PrepareEnvironment(HINSTANCE instance)
 {
 	lib = utils::nt::library(instance);
-	//set_working_directory();
 
-	const auto appDataPath = GetAppdataPath();
+#ifdef CI_BUILD
+	const auto appDataPath = absolute(std::filesystem::path(GetAppdataPath()));
 	base_path = appDataPath;
-	ui_path = appDataPath + "data/launcher-ui";
+	ui_path = (appDataPath / "data/launcher-ui");
+
+	SetWorkingDirectory();
+#else
+    const std::filesystem::path basePath = absolute(std::filesystem::path("runtime"));
+	base_path = basePath;
+	ui_path = absolute(basePath / std::filesystem::path("../../src/launcher-ui/"));
+#endif
 }
 
 bool Launcher::TryLockTerminationBarrier()
@@ -124,8 +126,8 @@ void Launcher::AddCommands(cef::cef_ui& cef_ui)
 
 			SetEnvironmentVariableA("XLABS_AW_INSTALL", aw_install->data());
 
-			const auto s1x_exe = base_path + "data/s1x/s1x.exe";
-			utils::nt::launch_process(s1x_exe, mapped_arg->second);
+			const auto s1x_exe = base_path / "data/s1x/s1x.exe";
+			utils::nt::launch_process(s1x_exe.string(), mapped_arg->second);
 
 			cef_ui.close_browser();
 		});
@@ -163,8 +165,8 @@ void Launcher::AddCommands(cef::cef_ui& cef_ui)
 
 			SetEnvironmentVariableA("XLABS_GHOSTS_INSTALL", aw_install->data());
 
-			const auto s1x_exe = base_path + "data/iw6x/iw6x.exe";
-			utils::nt::launch_process(s1x_exe, mapped_arg->second);
+			const auto s1x_exe = base_path / "data/iw6x/iw6x.exe";
+			utils::nt::launch_process(s1x_exe.string(), mapped_arg->second);
 
 			cef_ui.close_browser();
 		});
@@ -281,15 +283,15 @@ void Launcher::RunWatchdog()
 
 int Launcher::RunSubProcess()
 {
-	const cef::cef_ui cef_ui{ lib, base_path };
+	const cef::cef_ui cef_ui{ lib, base_path.string() };
 	return cef_ui.run_process();
 }
 
 void Launcher::ShowLauncherWindow()
 {
-	cef::cef_ui cef_ui{ lib, base_path };
+	cef::cef_ui cef_ui{ lib, base_path.string() };
 	AddCommands(cef_ui);
-	cef_ui.create(ui_path, "main.html");
+	cef_ui.create(ui_path.string(), "main.html");
 	cef_ui.work();
 }
 
@@ -309,7 +311,7 @@ int Launcher::Run(HINSTANCE instance)
 
 #if defined(CI_BUILD) && !defined(DEBUG)
 		RunAsSingleton();
-		updater::run(base_path);
+		updater::run(base_path.string() + "/");
 #endif
 
 		if (!IsDedi())
